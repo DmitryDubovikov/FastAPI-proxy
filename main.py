@@ -1,4 +1,6 @@
+import functools
 import json
+import logging
 
 import httpx
 import uvicorn
@@ -18,20 +20,29 @@ class Settings(BaseSettings):
 
 app = FastAPI()
 settings = Settings()
+logger = logging.getLogger(__name__)
+
+
+def log_request(func):
+    @functools.wraps(func)
+    async def func_wrapped(*args, **kwargs):
+        logger.info(f"Request in. {args!r} {kwargs!r}")
+        try:
+            return await func(*args, **kwargs)
+        finally:
+            logger.info(f"Request out. {args!r} {kwargs!r}")
+
+    return func_wrapped
 
 
 @app.post("/bot{tg_token}/{endpoint_method}")
+@log_request
 async def proxy_common_telegram_request(
     endpoint_method: str, tg_token: str, request: Request
 ):
-    return await handle_common_request(request, endpoint_method, tg_token)
-
-
-async def handle_common_request(request: Request, endpoint_method: str, tg_token: str):
     telegram_url = f"{settings.tg_server_url}/bot{tg_token}/{endpoint_method}"
 
     data = await request.body()
-    chat_id = ""
 
     headers = {}
     if "Content-Type" in request.headers:
@@ -40,7 +51,7 @@ async def handle_common_request(request: Request, endpoint_method: str, tg_token
         if "application/json" in headers["Content-Type"]:  # asend_message
             data_json = json.loads(data.decode("utf-8"))
             chat_id = data_json.get("chat_id", "")
-            print(f"chat_id: {chat_id}")
+            logger.info(f"chat_id: {chat_id}, endpoint_method: {endpoint_method}")
         elif "multipart/form-data" in headers["Content-Type"]:  # asend_photo
             # Разбиваем строку по нужным разделителям
             parts = data.split(
@@ -52,7 +63,7 @@ async def handle_common_request(request: Request, endpoint_method: str, tg_token
 
             # Декодируем значение chat_id из байтов в строку
             chat_id = chat_id_bytes.decode("utf-8")
-            print(f"chat_id: {chat_id}")
+            logger.info(f"chat_id: {chat_id}, endpoint_method: {endpoint_method}")
 
     async with httpx.AsyncClient() as client:
         response = await client.request(
@@ -72,4 +83,8 @@ async def handle_common_request(request: Request, endpoint_method: str, tg_token
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level="INFO",
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    )
     uvicorn.run("main:app", port=5000)
