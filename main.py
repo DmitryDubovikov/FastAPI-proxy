@@ -65,6 +65,10 @@ async def proxy_common_telegram_request(
             chat_id = chat_id_bytes.decode("utf-8")
             logger.info(f"chat_id: {chat_id}, endpoint_method: {endpoint_method}")
 
+    return await stream_http_request(request, headers, data, telegram_url)
+
+
+async def stream_http_request(request, headers, data, telegram_url):
     async with httpx.AsyncClient() as client:
         response = await client.request(
             request.method,
